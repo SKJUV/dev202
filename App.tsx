@@ -10,7 +10,12 @@ import {
   StatusBar,
   Dimensions,
   SafeAreaView,
+  Alert,
+  AppState,
 } from 'react-native';
+import ReactNativeBiometrics, { BiometryTypes } from 'react-native-biometrics';
+
+const rnBiometrics = new ReactNativeBiometrics();
 
 const { width, height } = Dimensions.get('window');
 
@@ -47,19 +52,49 @@ export default function App() {
     return () => pulse.stop();
   }, [pulseAnim]);
 
-  const handleAuthenticate = () => {
+  // Auto-lock when app goes to background
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState.match(/inactive|background/)) {
+        resetAuth();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const handleAuthenticate = async () => {
     if (authState !== 'IDLE') return;
 
-    setAuthState('SCANNING');
-    
-    // Reset and start scanning animation
-    scanLineAnim.setValue(0);
-    Animated.timing(scanLineAnim, {
-      toValue: 1,
-      duration: 2000,
-      useNativeDriver: true,
-    }).start(({ finished }) => {
-      if (finished) {
+    try {
+      const { available, biometryType } = await rnBiometrics.isSensorAvailable();
+
+      if (!available) {
+        Alert.alert(
+          'Biometrics Not Available',
+          'Your device does not support biometric authentication or it is not enabled.'
+        );
+        return;
+      }
+
+      setAuthState('SCANNING');
+      
+      // Start scanning animation (visual only, synced with prompt)
+      scanLineAnim.setValue(0);
+      const scanAnim = Animated.timing(scanLineAnim, {
+        toValue: 1,
+        duration: 2000,
+        useNativeDriver: true,
+      });
+      scanAnim.start();
+
+      const { success } = await rnBiometrics.simplePrompt({
+        promptMessage: 'Confirm fingerprint to unlock',
+      });
+
+      if (success) {
         setAuthState('SUCCESS');
         // Trigger success animations
         Animated.parallel([
@@ -74,8 +109,16 @@ export default function App() {
             useNativeDriver: true,
           }),
         ]).start();
+      } else {
+        setAuthState('IDLE');
+        scanAnim.stop();
+        scanLineAnim.setValue(0);
       }
-    });
+    } catch (error) {
+      setAuthState('IDLE');
+      Alert.alert('Error', 'An error occurred during authentication.');
+      console.error(error);
+    }
   };
 
   const resetAuth = () => {
