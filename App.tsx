@@ -8,7 +8,7 @@ export default function App() {
       justifyContent: 'center',
       alignItems: 'center'
     }}>
-      <Text>Mon app fonctionne tres bien  🔥</Text>
+      <Text>Mon app skjuve</Text>
     </View>
 
   );
